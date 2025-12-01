@@ -24,15 +24,15 @@ const getEnv = (key) => {
   return "";
 };
 
-const apiKey = getEnv("VITE_GEMINI_API_KEY");
+const apiKey = getEnv("AIzaSyCbnX7nr5N-Xz9uQZrMPBZaAeCoj7IYANs");
 
 const firebaseConfig = {
-  apiKey: getEnv("VITE_FIREBASE_API_KEY"),
-  authDomain: getEnv("VITE_FIREBASE_AUTH_DOMAIN"),
-  projectId: getEnv("VITE_FIREBASE_PROJECT_ID"),
-  storageBucket: getEnv("VITE_FIREBASE_STORAGE_BUCKET"),
-  messagingSenderId: getEnv("VITE_FIREBASE_MESSAGING_SENDER_ID"),
-  appId: getEnv("VITE_FIREBASE_APP_ID")
+  apiKey: "AIzaSyCOgF_kEGTiUUC0qKnYxeCF7-WbhmEyq_c",
+  authDomain: "shit-a43ea.firebaseapp.com",
+  projectId: "shit-a43ea",
+  storageBucket: "shit-a43ea.firebasestorage.app",
+  messagingSenderId: "672307794328",
+  appId: "1:672307794328:web:1991a78d1cc42681819bed"
 };
 
 const app = initializeApp(firebaseConfig);
