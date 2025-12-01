@@ -1,83 +1,406 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Brain, 
-  Activity, 
-  MessageSquare, 
-  Sparkles, 
-  ArrowRight, 
-  X, 
-  Play, 
-  RotateCcw, 
-  Lock,
-  Target,
-  FileText,
-  Zap,
-  BarChart3,
-  BookOpen,
-  Microscope,
-  CheckCircle2,
-  ChevronRight,
-  Terminal,
-  Layers,
-  Clock,
-  Music,
-  ListTodo,
-  Compass,
-  Plus,
-  Save,
-  Trash2,
-  AlertTriangle,
-  Settings,
-  Lightbulb,
-  TrendingUp,
-  User,
-  Globe,
-  Languages
+  Brain, Activity, MessageSquare, Sparkles, ArrowRight, X, Play, RotateCcw, Lock, Target,
+  FileText, Zap, BarChart3, BookOpen, Microscope, CheckCircle2, ChevronRight, Terminal,
+  Layers, Clock, Music, ListTodo, Compass, Plus, Save, Trash2, AlertTriangle, Settings,
+  Lightbulb, TrendingUp, User, Globe, Languages, Loader2
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
-  getAuth, 
-  signInAnonymously, 
-  onAuthStateChanged, 
-  signInWithCustomToken 
+  getAuth, signInAnonymously, onAuthStateChanged 
 } from 'firebase/auth';
 import { 
-  getFirestore, 
-  collection, 
-  addDoc, 
-  query, 
-  orderBy, 
-  onSnapshot, 
-  serverTimestamp, 
-  limit, 
-  doc, 
-  setDoc, 
-  getDoc,
-  updateDoc,
-  deleteDoc,
-  getDocs,
-  writeBatch
+  getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, 
+  limit, doc, setDoc, getDoc, updateDoc, deleteDoc, getDocs, writeBatch
 } from 'firebase/firestore';
 
 // --- Configuration Helper ---
-// This function safely retrieves environment variables.
-// It works in Vite (Vercel) and prevents crashes in environments where import.meta is unavailable.
 const getEnv = (key) => {
   try {
-    // Check if import.meta.env exists (Vite standard)
     if (typeof import.meta !== 'undefined' && import.meta.env) {
       return import.meta.env[key] || "";
     }
-  } catch (e) {
-    console.warn("Environment variable access failed, defaulting to empty string.");
-  }
+  } catch (e) { console.warn("Env error"); }
   return "";
 };
 
-// 1. Get Gemini Key from Vercel Environment Variables
 const apiKey = getEnv("VITE_GEMINI_API_KEY");
 
-// --- TRANSLATIONS DICTIONARY ---
+const firebaseConfig = {
+  apiKey: getEnv("VITE_FIREBASE_API_KEY"),
+  authDomain: getEnv("VITE_FIREBASE_AUTH_DOMAIN"),
+  projectId: getEnv("VITE_FIREBASE_PROJECT_ID"),
+  storageBucket: getEnv("VITE_FIREBASE_STORAGE_BUCKET"),
+  messagingSenderId: getEnv("VITE_FIREBASE_MESSAGING_SENDER_ID"),
+  appId: getEnv("VITE_FIREBASE_APP_ID")
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = 'aura-production-v1';
+
+// --- SJT DATA (Based on your Criteria Document) ---
+const SJT_QUESTIONS = [
+    // --- CONSCIENTIOUSNESS (C) ---
+    {
+        id: 'c1_study_stress', // Criterion: Action under stress
+        text: "You have a massive final exam in 3 days. You planned to study Chapter 4 today, but you woke up feeling mentally exhausted and foggy.",
+        options: [
+            { text: "Push through the fog and stick to the schedule exactly as planned.", score: 3 }, // High C (Discipline)
+            { text: "Modify the plan: study easier concepts today to keep momentum without burning out.", score: 2 }, // Mod C (Adaptability)
+            { text: "Take the day off to recover; I'll cram double tomorrow.", score: 0 }, // Low C (Procrastination risk)
+            { text: "Wait until I feel 'inspired' or energetic to start.", score: 1 } // Low C (Mood dependent)
+        ],
+        trait: 'C'
+    },
+    {
+        id: 'c2_environment', // Criterion: Habits/Environment
+        text: "You are working on a personal passion project. Your workspace has become cluttered with papers, cups, and cables over the week.",
+        options: [
+            { text: "I stop immediately to clean everything. I can't focus in a mess.", score: 3 },
+            { text: "I ignore the mess completely; it doesn't affect my workflow.", score: 0 },
+            { text: "I clear just enough space to work now and clean properly later.", score: 1 },
+            { text: "I tidy up at the end of every day so it never gets this bad.", score: 3 } 
+        ],
+        trait: 'C'
+    },
+    {
+        id: 'c3_frustration', // Criterion: Frustration/Resilience (Reversed)
+        text: "You spent 2 hours writing an essay, but your computer crashed and you lost the last hour of work. You have no backup.",
+        options: [
+            { text: "Feel crushed, close the laptop, and decide to do it tomorrow.", score: 0 },
+            { text: "Take a 10-minute walk to cool down, then rewrite it immediately while my memory is fresh.", score: 3 },
+            { text: "Try to rewrite it, but with less effort/detail this time.", score: 1 },
+            { text: "Panic and spend an hour looking for a recovery tool before writing.", score: 2 }
+        ],
+        trait: 'C'
+    },
+    {
+        id: 'c4_interaction', // Criterion: Group Responsibility
+        text: "In a group project, the leader is disorganized and the deadline is approaching fast. No one is taking charge.",
+        options: [
+            { text: "Step up, create a timeline for everyone, and enforce it.", score: 3 },
+            { text: "Do my own part perfectly and hope they figure theirs out.", score: 2 },
+            { text: "Wait for someone else to fix it; I don't want to be bossy.", score: 1 },
+            { text: "Complain to the teacher about the group.", score: 0 }
+        ],
+        trait: 'C'
+    },
+    {
+        id: 'c5_fear', // Criterion: Fear/Motivation
+        text: "What is your biggest fear when starting a long-term goal (like learning a language)?",
+        options: [
+            { text: "That I will get bored and lose interest halfway through.", score: 0 },
+            { text: "That I won't be able to maintain the daily routine I set for myself.", score: 3 },
+            { text: "That I will put in effort but not see immediate results.", score: 1 },
+            { text: "That unexpected life events will disrupt my plan.", score: 2 }
+        ],
+        trait: 'C'
+    },
+
+    // --- OPENNESS (O) ---
+    {
+        id: 'o1_method', // Criterion: New vs Familiar
+        text: "Your teacher assigns a project and gives you two options: Option A is a standard essay (guaranteed good grade). Option B is a 'Creative Media' project (risky, no clear rubric).",
+        options: [
+            { text: "Choose Option A. Why risk my grade?", score: 0 },
+            { text: "Choose Option B immediately. It sounds like an adventure.", score: 3 },
+            { text: "Choose Option B only if I have a really good idea.", score: 2 },
+            { text: "Choose Option A but try to make the writing creative.", score: 1 }
+        ],
+        trait: 'O'
+    },
+    {
+        id: 'o2_experience', // Criterion: Experience/Novelty
+        text: "You are at a restaurant. The menu lists your absolute favorite comfort food, but also a 'Chef's Mystery Special' with ingredients you've never heard of.",
+        options: [
+            { text: "Order the Mystery Special. I want to taste something new.", score: 3 },
+            { text: "Order the favorite. I want to enjoy my meal, not experiment.", score: 0 },
+            { text: "Ask the waiter for every ingredient in the special, then decide.", score: 1 },
+            { text: "Convince a friend to order the special so I can try a bite.", score: 2 }
+        ],
+        trait: 'O'
+    },
+    {
+        id: 'o3_abstract', // Criterion: Abstract Thinking
+        text: "You stumble upon a documentary about theoretical physics and the nature of time. It's complex and slightly confusing.",
+        options: [
+            { text: "Turn it off. It's too abstract and has no practical use.", score: 0 },
+            { text: "Watch it mesmerized, enjoying the feeling of having my mind blown.", score: 3 },
+            { text: "Watch it, but pause frequently to fact-check everything.", score: 2 },
+            { text: "Watch it as background noise.", score: 1 }
+        ],
+        trait: 'O'
+    },
+    {
+        id: 'o4_routine_reverse', // Criterion: Routine Preference (Reversed)
+        text: "How do you feel about having a completely unpredictable weekend with zero plans?",
+        options: [
+            { text: "Anxious. I need to know what I'm doing.", score: 0 },
+            { text: "Excited! Spontaneity is when life happens.", score: 3 },
+            { text: "Fine, as long as I can relax at home.", score: 1 },
+            { text: "I'll make a rough plan on Friday just in case.", score: 2 }
+        ],
+        trait: 'O'
+    },
+    {
+        id: 'o5_role', // Criterion: Role/Identity
+        text: "If you had to choose a role in a movie production, which would you be?",
+        options: [
+            { text: "The Concept Artist: Designing worlds that don't exist yet.", score: 3 },
+            { text: "The Editor: Piecing existing footage together logically.", score: 1 },
+            { text: "The Director: Managing the people and the schedule.", score: 2 },
+            { text: "The Accountant: Ensuring the budget is balanced.", score: 0 }
+        ],
+        trait: 'O'
+    }
+];
+
+// --- TEXT ANALYSIS PROMPT ---
+const PSYCH_ANALYSIS_PROMPT = `
+Analyze the following user responses to determine their Big Five personality traits: Conscientiousness (C) and Openness (O).
+
+Input:
+1. Achievement Story (Indicator for C): "{{C_ESSAY}}"
+2. Hypothetical Scenario (Indicator for O): "{{O_ESSAY}}"
+3. Free Talk: "{{FREE_ESSAY}}"
+
+Task:
+- Analyze the linguistic patterns (structure, vocabulary, complexity).
+- Score C and O on a scale of 0 to 100 based ONLY on the text.
+- Provide a brief 1-sentence analysis for each.
+
+Output JSON ONLY:
+{
+  "c_score_nlp": number,
+  "o_score_nlp": number,
+  "c_analysis": "string",
+  "o_analysis": "string"
+}
+`;
+
+// --- PHASE 1 COMPONENT ---
+const Phase1Assessment = ({ onComplete, userUid }) => {
+    const [step, setStep] = useState('intro'); // intro, sjt, nlp, processing
+    const [formData, setFormData] = useState({ name: '', age: '' });
+    const [sjtAnswers, setSjtAnswers] = useState({});
+    const [sjtIndex, setSjtIndex] = useState(0);
+    const [essays, setEssays] = useState({ c_essay: '', o_essay: '', free_essay: '' });
+    const [loading, setLoading] = useState(false);
+
+    // 1. Intro Step
+    if (step === 'intro') {
+        return (
+            <div className="max-w-md mx-auto mt-20 p-8 bg-slate-900 border border-white/10 rounded-3xl animate-fade-in">
+                <div className="w-12 h-12 bg-cyan-500/20 text-cyan-400 rounded-xl flex items-center justify-center mb-6">
+                    <User size={24} />
+                </div>
+                <h1 className="text-3xl text-white font-light mb-2">Welcome.</h1>
+                <p className="text-slate-400 mb-8">Before we begin, the system needs to calibrate to your unique frequency.</p>
+                <input 
+                    className="w-full bg-black/40 border border-white/10 rounded-xl p-4 mb-4 text-white outline-none focus:border-cyan-500 transition-all"
+                    placeholder="Your Name"
+                    value={formData.name}
+                    onChange={e => setFormData({...formData, name: e.target.value})}
+                />
+                <input 
+                    className="w-full bg-black/40 border border-white/10 rounded-xl p-4 mb-8 text-white outline-none focus:border-cyan-500 transition-all"
+                    placeholder="Your Age"
+                    type="number"
+                    value={formData.age}
+                    onChange={e => setFormData({...formData, age: e.target.value})}
+                />
+                <button 
+                    disabled={!formData.name || !formData.age}
+                    onClick={() => setStep('sjt')}
+                    className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-4 rounded-xl font-bold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                    Begin Calibration <ArrowRight size={18} />
+                </button>
+            </div>
+        );
+    }
+
+    // 2. SJT Step
+    if (step === 'sjt') {
+        const currentQ = SJT_QUESTIONS[sjtIndex];
+        const progress = ((sjtIndex) / SJT_QUESTIONS.length) * 100;
+
+        const handleOptionSelect = (score) => {
+            setSjtAnswers(prev => ({ ...prev, [currentQ.id]: score }));
+            if (sjtIndex < SJT_QUESTIONS.length - 1) {
+                setSjtIndex(prev => prev + 1);
+            } else {
+                setStep('nlp');
+            }
+        };
+
+        return (
+            <div className="max-w-2xl mx-auto mt-10 p-8">
+                <div className="w-full bg-slate-800 h-1 rounded-full mb-8 overflow-hidden">
+                    <div className="h-full bg-cyan-500 transition-all duration-500" style={{width: `${progress}%`}}></div>
+                </div>
+                
+                <h2 className="text-sm text-slate-500 uppercase tracking-widest mb-4">Scenario {sjtIndex + 1} / {SJT_QUESTIONS.length}</h2>
+                <h3 className="text-2xl text-white font-light mb-8 leading-relaxed">{currentQ.text}</h3>
+
+                <div className="space-y-4">
+                    {currentQ.options.map((opt, idx) => (
+                        <button 
+                            key={idx}
+                            onClick={() => handleOptionSelect(opt.score)}
+                            className="w-full text-left p-6 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-cyan-500/50 transition-all group"
+                        >
+                            <span className="text-slate-300 group-hover:text-white transition-colors">{opt.text}</span>
+                        </button>
+                    ))}
+                </div>
+            </div>
+        );
+    }
+
+    // 3. NLP Step
+    if (step === 'nlp') {
+        const handleSubmit = async () => {
+            setLoading(true);
+            setStep('processing');
+            
+            // A. Calculate SJT Scores
+            let sjtC = 0;
+            let sjtO = 0;
+            SJT_QUESTIONS.forEach(q => {
+                const score = sjtAnswers[q.id] || 0;
+                if (q.trait === 'C') sjtC += score; // Max 15
+                if (q.trait === 'O') sjtO += score; // Max 15
+            });
+
+            // Normalize SJT to 0-100 (Weight: 60%)
+            const sjtC_norm = (sjtC / 15) * 100;
+            const sjtO_norm = (sjtO / 15) * 100;
+
+            try {
+                // B. Analyze NLP with Gemini
+                const prompt = PSYCH_ANALYSIS_PROMPT
+                    .replace('{{C_ESSAY}}', essays.c_essay)
+                    .replace('{{O_ESSAY}}', essays.o_essay)
+                    .replace('{{FREE_ESSAY}}', essays.free_essay);
+
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { responseMimeType: "application/json" }
+                    })
+                });
+                
+                const data = await response.json();
+                const nlpResult = JSON.parse(data.candidates[0].content.parts[0].text);
+
+                // C. Final Weighted Calculation
+                // SJT = 60%, NLP = 40%
+                const finalC = Math.round((sjtC_norm * 0.6) + (nlpResult.c_score_nlp * 0.4));
+                const finalO = Math.round((sjtO_norm * 0.6) + (nlpResult.o_score_nlp * 0.4));
+
+                // D. Save to Firebase
+                await setDoc(doc(db, 'artifacts', appId, 'users', userUid, 'data', 'psychometrics'), {
+                    name: formData.name,
+                    age: formData.age,
+                    c_score: finalC,
+                    o_score: finalO,
+                    sjt_raw: { c: sjtC, o: sjtO },
+                    nlp_analysis: {
+                        c: nlpResult.c_analysis,
+                        o: nlpResult.o_analysis
+                    },
+                    completedAt: serverTimestamp()
+                });
+
+                // E. Transition
+                onComplete({ c_score: finalC, o_score: finalO });
+
+            } catch (error) {
+                console.error("Analysis Failed", error);
+                // Fallback if AI fails: Just use SJT scores
+                const finalC = Math.round(sjtC_norm);
+                const finalO = Math.round(sjtO_norm);
+                await setDoc(doc(db, 'artifacts', appId, 'users', userUid, 'data', 'psychometrics'), {
+                    name: formData.name,
+                    age: formData.age,
+                    c_score: finalC,
+                    o_score: finalO,
+                    fallback: true,
+                    completedAt: serverTimestamp()
+                });
+                onComplete({ c_score: finalC, o_score: finalO });
+            }
+        };
+
+        return (
+            <div className="max-w-3xl mx-auto mt-10 p-8">
+                <h2 className="text-3xl text-white font-light mb-2">Final Thoughts</h2>
+                <p className="text-slate-400 mb-8">Please answer these open-ended questions. There are no right or wrong answers.</p>
+
+                <div className="space-y-8">
+                    <div>
+                        <label className="block text-cyan-400 text-sm font-bold mb-2">1. The Achievement</label>
+                        <p className="text-slate-400 text-sm mb-2">Describe a recent significant achievement of yours. What exact steps did you take to reach it? Be specific.</p>
+                        <textarea 
+                            className="w-full h-32 bg-black/40 border border-white/10 rounded-xl p-4 text-white outline-none focus:border-cyan-500 transition-all"
+                            value={essays.c_essay}
+                            onChange={e => setEssays({...essays, c_essay: e.target.value})}
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-purple-400 text-sm font-bold mb-2">2. The Hypothetical</label>
+                        <p className="text-slate-400 text-sm mb-2">Imagine a world where gravity shifts direction every hour. How would society change? How would you live?</p>
+                        <textarea 
+                            className="w-full h-32 bg-black/40 border border-white/10 rounded-xl p-4 text-white outline-none focus:border-purple-500 transition-all"
+                            value={essays.o_essay}
+                            onChange={e => setEssays({...essays, o_essay: e.target.value})}
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-white text-sm font-bold mb-2">3. Free Space</label>
+                        <p className="text-slate-400 text-sm mb-2">Write about anything on your mind right now.</p>
+                        <textarea 
+                            className="w-full h-32 bg-black/40 border border-white/10 rounded-xl p-4 text-white outline-none focus:border-white/50 transition-all"
+                            value={essays.free_essay}
+                            onChange={e => setEssays({...essays, free_essay: e.target.value})}
+                        />
+                    </div>
+
+                    <button 
+                        disabled={!essays.c_essay || !essays.o_essay || !essays.free_essay}
+                        onClick={handleSubmit}
+                        className="w-full bg-white text-black py-4 rounded-xl font-bold hover:bg-slate-200 transition-all disabled:opacity-50"
+                    >
+                        Complete Assessment
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // 4. Processing Step
+    if (step === 'processing') {
+        return (
+            <div className="h-[60vh] flex flex-col items-center justify-center">
+                <Loader2 className="w-16 h-16 text-cyan-500 animate-spin mb-6" />
+                <h2 className="text-2xl text-white font-light mb-2">Analyzing Patterns...</h2>
+                <p className="text-slate-500">Integrating SJT metrics with NLP linguistic markers.</p>
+            </div>
+        );
+    }
+
+    return null;
+};
+
+
+// --- TRANSLATIONS DICTIONARY (For Phase 2) ---
 const TEXTS = {
   en: {
     nav_home: "Home",
@@ -169,8 +492,6 @@ const TEXTS = {
   }
 };
 
-// --- PHASE 2 PROMPTS (MODIFIED FOR NOTES CONTEXT) ---
-
 const BIG5_IMPLICIT_PROMPT = `
 IDENTITY: You are Aura, a human-like companion implementing the BIG5-CHAT Protocol.
 CONTEXT: User Stats -> C={{C}}%, O={{O}}%.
@@ -239,24 +560,6 @@ PROTOCOL:
 OUTPUT: JSON Object ONLY: { "nudge_message": "string" }
 `;
 
-// --- Firebase ---
-// 2. Get Firebase Keys from Vercel Environment Variables via safe helper
-const firebaseConfig = {
-  apiKey: getEnv("VITE_FIREBASE_API_KEY"),
-  authDomain: getEnv("VITE_FIREBASE_AUTH_DOMAIN"),
-  projectId: getEnv("VITE_FIREBASE_PROJECT_ID"),
-  storageBucket: getEnv("VITE_FIREBASE_STORAGE_BUCKET"),
-  messagingSenderId: getEnv("VITE_FIREBASE_MESSAGING_SENDER_ID"),
-  appId: getEnv("VITE_FIREBASE_APP_ID")
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-
-// 3. Set a static App ID
-const appId = 'aura-production-v1';
-
 // --- Helper Components ---
 
 const GlassPanel = ({ children, className = "" }) => (
@@ -282,9 +585,10 @@ const NavButtonMini = ({ icon, label, active, onClick }) => (
 export default function AuraEcosystem() {
   const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [stats, setStats] = useState({ c_score: 50, o_score: 50, headline: "Calibrating..." });
+  const [stats, setStats] = useState(null); // Null initially to trigger check
   const [crisisMode, setCrisisMode] = useState(false);
-  const [lang, setLang] = useState('en'); // 'en' or 'ar'
+  const [lang, setLang] = useState('en'); 
+  const [loading, setLoading] = useState(true);
   
   // Lifted Chat State
   const [chatMessages, setChatMessages] = useState([]);
@@ -292,8 +596,6 @@ export default function AuraEcosystem() {
   // Auth & Initial Data Load
   useEffect(() => {
     const initAuth = async () => {
-      // In production, we don't have the custom token from the preview env
-      // So we default to anonymous auth (or add real login later)
       await signInAnonymously(auth);
     };
     initAuth();
@@ -301,12 +603,14 @@ export default function AuraEcosystem() {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
         if (u) {
             setUser(u);
-            // Load Stats
+            // Check if user has already done Phase 1
             getDoc(doc(db, 'artifacts', appId, 'users', u.uid, 'data', 'psychometrics')).then(s => {
-                if(s.exists()) setStats(s.data());
-                else {
-                    setStats({ c_score: 65, o_score: 70, headline: "The Adaptive Strategist" });
+                if(s.exists()) {
+                    setStats(s.data()); // Load existing stats
+                } else {
+                    setStats(null); // No stats -> Phase 1
                 }
+                setLoading(false);
             });
         }
     });
@@ -317,8 +621,21 @@ export default function AuraEcosystem() {
   const isRTL = lang === 'ar';
 
   if (crisisMode) return <CrisisOverlay onClose={() => setCrisisMode(false)} t={t} isRTL={isRTL} />;
-  if (!user) return <div className="h-screen bg-black flex items-center justify-center"><Sparkles className="animate-spin text-cyan-500" /></div>;
+  
+  if (loading || !user) {
+      return (
+          <div className="h-screen bg-black flex items-center justify-center">
+              <Sparkles className="animate-spin text-cyan-500" />
+          </div>
+      );
+  }
 
+  // --- PHASE 1 LOGIC ---
+  if (!stats) {
+      return <Phase1Assessment userUid={user.uid} onComplete={(newStats) => setStats(newStats)} />;
+  }
+
+  // --- PHASE 2 LOGIC (Dashboard) ---
   return (
     <div className={`min-h-screen bg-black text-slate-200 font-sans selection:bg-cyan-500/30 overflow-hidden relative ${isRTL ? 'font-arabic' : ''}`} dir={isRTL ? 'rtl' : 'ltr'}>
         <div className="fixed inset-0 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-slate-900 via-black to-black pointer-events-none"></div>
